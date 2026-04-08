@@ -18,7 +18,8 @@ dependencies = [
 ]
 
 [project.scripts]
-cyberguard-server = "server.app:app"
+# Change this to point to the main function inside app.py
+cyberguard-server = "server.app:main"
 
 [project.entry-points."openenv.envs"]
 cyberguard = "server.app:app"
