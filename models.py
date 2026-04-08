@@ -1,9 +1,10 @@
-
-from typing import Optional, List
+from typing import Optional
 from openenv.core.env_server import Action, Observation, State
- 
+
+
 class CyberGuardAction(Action):
     label: str
+
 
 class CyberGuardObservation(Observation):
     message: str
@@ -12,10 +13,9 @@ class CyberGuardObservation(Observation):
     done: bool
     reward: Optional[float] = None
 
+
 class CyberGuardState(State):
     episode_id: Optional[str] = None
     step_count: int = 0
-    current_score: float = 0
+    current_score: float = 0.0
     difficulty: str = "easy"
-
-
