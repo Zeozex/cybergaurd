@@ -1,121 +1,133 @@
 import os
 import sys
 import requests
+from pydantic import BaseModel
 from openai import OpenAI
 
-# 1. Pathing Fix: Ensure the root is in the path
+# Ensure local imports work
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Import your Action model from the server folder
 try:
     from server.models import CyberGuardAction
 except ImportError:
     from models import CyberGuardAction
 
-# --- CUSTOM CLIENT CLASS ---
-# This replaces the missing 'server.client' and talks to your FastAPI server
-class CyberGuardEnv:
-    def __init__(self, base_url):
-        self.base_url = base_url.rstrip('/')
 
-    def reset(self):
-        resp = requests.post(f"{self.base_url}/reset")
-        resp.raise_for_status()
-        return CyberGuardObservation(**resp.json())
-
-    def step(self, action):
-        resp = requests.post(f"{self.base_url}/step", json=action.dict())
-        resp.raise_for_status()
-        return CyberGuardObservation(**resp.json())
-
-# Helper to handle observations
-from pydantic import BaseModel
 class CyberGuardObservation(BaseModel):
     message: str
     message_type: str
     difficulty: str
     done: bool
     reward: float = 0.0
+    last_action_error: str | None = None
 
-# --- CONFIGURATION ---
-API_BASE_URL = os.getenv("API_BASE_URL", "https://api.groq.com/openai/v1")
-API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN") or ""
-MODEL_NAME = os.getenv("MODEL_NAME", "llama-3.1-8b-instant")
-# On Hugging Face, the server runs on port 7860
+
+class CyberGuardEnv:
+    def __init__(self, base_url: str):
+        self.base_url = base_url.rstrip("/")
+
+    def reset(self):
+        resp = requests.post(f"{self.base_url}/reset", timeout=60)
+        resp.raise_for_status()
+        return CyberGuardObservation(**resp.json())
+
+    def step(self, action):
+        payload = action.model_dump() if hasattr(action, "model_dump") else action.dict()
+        resp = requests.post(f"{self.base_url}/step", json=payload, timeout=60)
+        resp.raise_for_status()
+        return CyberGuardObservation(**resp.json())
+
+    def close(self):
+        try:
+            requests.post(f"{self.base_url}/close", timeout=10)
+        except Exception:
+            pass
+
+
+API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4.1-mini")
+HF_TOKEN = os.getenv("HF_TOKEN")
+if HF_TOKEN is None:
+    raise ValueError("HF_TOKEN environment variable is required")
+
 ENV_URL = os.getenv("ENV_URL", "http://localhost:7860")
 
-client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
-SYSTEM_PROMPT = """You are a cyber security expert.
-Analyze the given message and classify it as one of:
-- safe
-- suspicious
-- highly_suspicious
-- scam
+SYSTEM_PROMPT = (
+    "You are a cyber security expert. "
+    "Classify the message as one of: safe, suspicious, highly_suspicious, scam. "
+    "Reply with ONLY the label."
+)
 
-Reply with ONLY the label, nothing else."""
 
-def run_task(difficulty: str, num_episodes: int = 1):
-    print(f"[START] task={difficulty}_tier env=cyberguard model={MODEL_NAME}")
-    
-    scores = []
-    for _ in range(num_episodes):
-        env = CyberGuardEnv(base_url=ENV_URL)
+def fmt_bool(v: bool) -> str:
+    return "true" if v else "false"
+
+
+def run_task(task_name: str):
+    env = CyberGuardEnv(base_url=ENV_URL)
+    rewards = []
+    steps = 0
+    success = False
+    obs = None
+
+    print(f"[START] task={task_name} env=cyberguard model={MODEL_NAME}")
+
+    try:
         obs = env.reset()
-        episode_rewards = []
-        steps = 0
-        
-        while not obs.done:
-            # Skip messages not matching the current task difficulty
-            if obs.difficulty != difficulty:
-                obs = env.step(CyberGuardAction(label="safe"))
-                continue
-            
-            # AI Inference
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Message: {obs.message}\nType: {obs.message_type}"}
-                ],
-                max_tokens=10,
-                temperature=0.1,
-            )
-            
-            label = response.choices[0].message.content.strip().lower()
-            if label not in ["safe", "suspicious", "highly_suspicious", "scam"]:
-                label = "suspicious"
-            
-            # Environment Step
-            obs = env.step(CyberGuardAction(label=label))
-            
-            steps += 1
-            reward_val = obs.reward if obs.reward is not None else 0.0
-            episode_rewards.append(reward_val)
-            
-            print(f"[STEP] step={steps} action={label} reward={reward_val:.2f} done={obs.done} error=null")
 
-        if episode_rewards:
-            ep_score = sum(episode_rewards) / len(episode_rewards)
-            scores.append(ep_score)
-            success = ep_score > 0
-            print(f"[END] success={success} steps={steps} score={ep_score:.3f} rewards={episode_rewards}")
-        elif steps > 0:
-            scores.append(0.0)
-            print(f"[END] success=false steps={steps} score=0.000 rewards=[]")
-            
-    return sum(scores) / len(scores) if scores else 0.0
+        while not obs.done:
+            try:
+                response = client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {
+                            "role": "user",
+                            "content": f"Message: {obs.message}\nType: {obs.message_type}",
+                        },
+                    ],
+                )
+                label = response.choices[0].message.content.strip().lower()
+            except Exception:
+                label = "suspicious"
+
+            if label not in {"safe", "suspicious", "highly_suspicious", "scam"}:
+                label = "suspicious"
+
+            action = CyberGuardAction(label=label)
+            obs = env.step(action)
+
+            steps += 1
+            reward_val = float(getattr(obs, "reward", 0.0) or 0.0)
+            rewards.append(reward_val)
+
+            error_val = getattr(obs, "last_action_error", None)
+            error_str = error_val if error_val else "null"
+            print(
+                f"[STEP] step={steps} action={label} "
+                f"reward={reward_val:.2f} done={fmt_bool(obs.done)} error={error_str}"
+            )
+
+        success = True if obs and obs.done else False
+
+    except Exception as e:
+        success = False
+        error_str = str(getattr(obs, "last_action_error", None) or e)
+        print(
+            f"[STEP] step={steps + 1} action=error reward=0.00 done=false error={error_str}"
+        )
+
+    finally:
+        try:
+            env.close()
+        except Exception:
+            pass
+
+        rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+        print(f"[END] success={fmt_bool(success)} steps={steps} rewards={rewards_str}")
+
 
 if __name__ == "__main__":
-    # Ensure environment is ready
-    try:
-        easy_score = run_task("easy")
-        medium_score = run_task("medium")
-        hard_score = run_task("hard")
-        
-        overall = (easy_score + medium_score + hard_score) / 3
-        print("-" * 40)
-        print(f"Final Summary Score: {overall:.3f}")
-    except Exception as e:
-        print(f"Execution Error: {e}")
-        sys.exit(1)
+    run_task("cyberguard")
