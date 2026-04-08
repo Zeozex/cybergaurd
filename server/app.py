@@ -1,6 +1,6 @@
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Server'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'server'))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from openenv.core.env_server import create_fastapi_app

@@ -1,8 +1,9 @@
 name: cyberguard
-version: 1.0.0
+version: "1.0.0"
 description: "Cyber scam detection environment for training AI agents to identify phishing, OTP fraud, and scam messages"
 author: "Supreet"
 tags:
   - cybersecurity
   - scam-detection
   - nlp
+  
