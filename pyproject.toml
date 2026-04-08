@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-cyberguard-server = "server.app:main"
+server = "server.app:main"
 
 [project.entry-points."openenv.envs"]
 cyberguard = "server.app:app"
