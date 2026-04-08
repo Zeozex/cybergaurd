@@ -17,8 +17,11 @@ dependencies = [
     "python-dotenv",
 ]
 
-[tool.hatch.build.targets.wheel]
-packages = ["."]
+[project.scripts]
+cyberguard-server = "server.app:app"
 
 [project.entry-points."openenv.envs"]
-cyberguard = "Server.app:app"
+cyberguard = "server.app:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["server"]
