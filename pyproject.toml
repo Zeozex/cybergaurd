@@ -19,3 +19,6 @@ dependencies = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
+
+[project.entry-points."openenv.envs"]
+cyberguard = "Server.app:app"
