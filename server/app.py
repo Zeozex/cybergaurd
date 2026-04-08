@@ -13,8 +13,10 @@ from models import CyberGuardAction, CyberGuardObservation
 app = create_fastapi_app(CyberGuardEnvironment, CyberGuardAction, CyberGuardObservation)
 
 def main():
-    """Function called by the 'cyberguard-server' script."""
-    uvicorn.run("server.app:app", host="0.0.0.0", port=8000, reload=False)
+    """The entry point that the validator is looking for."""
+    import uvicorn
+    # This tells uvicorn to run the 'app' object defined in this file
+    uvicorn.run("server.app:app", host="0.0.0.0", port=8000)
 
 if __name__ == "__main__":
     main()
